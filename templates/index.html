@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Counting ITDP · Surveyor Counter Console v2.1</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            750: '#233044',
+                            850: '#151e2e',
+                            950: '#0a0f1d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css?v=2.1">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white">
+
+    <!-- Top Navigation / Header -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-4 lg:px-8 py-3">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            
+            <!-- Logo & Brand -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-sky-600/20 text-white font-extrabold text-lg">
+                    <i class="fas fa-car-side"></i>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+                        TRAFFIC COUNTING CONSOLE
+                        <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-950 text-sky-400 border border-sky-800">CLEAR - ITDP v2.1</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Pencacahan CCTV Per 15 Menit · Hanya Mengubah Sel Biru & Kuning</p>
+                </div>
+            </div>
+
+            <!-- Header Controls & File Info -->
+            <div class="flex items-center gap-2 flex-wrap">
+                
+                <!-- View Mode Switcher (Hanya tampil bila file sudah aktif) -->
+                <div id="viewModeSwitcher" class="hidden items-center bg-slate-850 p-1 rounded-xl border border-slate-750">
+                    <button type="button" id="btnModeCounter" onclick="switchViewMode('counter')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-sky-500 text-white shadow-md">
+                        <i class="fas fa-gamepad mr-1"></i> Mode Counter
+                    </button>
+                    <button type="button" id="btnModeExcel" onclick="switchViewMode('excel')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-white">
+                        <i class="fas fa-table mr-1"></i> Tampilan View Excel
+                    </button>
+                </div>
+
+                <!-- Active File Pill & Change File -->
+                <div id="activeFilePill" class="hidden items-center gap-2">
+                    <div class="flex items-center bg-slate-850 rounded-xl border border-slate-700/80 px-3 py-1.5 text-xs">
+                        <i class="fas fa-file-excel text-emerald-400 mr-2 text-sm"></i>
+                        <span id="activeFileName" class="font-mono font-bold text-slate-200 max-w-[200px] truncate" title="">-</span>
+                    </div>
+                    <button type="button" onclick="closeActiveFile()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-300 transition-all cursor-pointer" title="Lepas file dan ganti file lain">
+                        <i class="fas fa-exchange-alt mr-1"></i> Ganti
+                    </button>
+                </div>
+
+                <!-- Action Buttons (Aktif saat file terunggah) -->
+                <div id="fileActionButtons" class="hidden items-center gap-2">
+                    <!-- Review / QC Modal Button -->
+                    <button type="button" onclick="openReviewModal()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer">
+                        <i class="fas fa-clipboard-check text-sky-400"></i>
+                        <span>Review & QC</span>
+                    </button>
+
+                    <!-- Unduh Excel -->
+                    <button type="button" onclick="downloadCurrentExcel()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer" title="Unduh File Excel Terbaru">
+                        <i class="fas fa-download text-emerald-400"></i>
+                        <span>Unduh</span>
+                    </button>
+
+                    <!-- Primary Commit to Excel Button -->
+                    <button type="button" onclick="syncToExcel()" class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 border border-emerald-400/30 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer">
+                        <i class="fas fa-save"></i>
+                        <span>Simpan ke Excel</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="max-w-7xl mx-auto w-full px-4 lg:px-8 py-5 flex-1 flex flex-col gap-5">
+        
+        <!-- SECTION 1: DRAG & DROP CARD SLOT (Ditampilkan bila belum ada file yang aktif) -->
+        <section id="dropZoneSlotSection" class="flex flex-col items-center justify-center my-auto py-10">
+            <div class="max-w-2xl w-full">
+                
+                <!-- Main Drag & Drop Zone Box -->
+                <div id="dragDropArea" class="border-2 border-dashed border-sky-500/50 hover:border-sky-400 bg-slate-900/80 hover:bg-slate-900 rounded-3xl p-10 text-center transition-all cursor-pointer shadow-2xl relative overflow-hidden group">
+                    <!-- Glow effect -->
+                    <div class="absolute -inset-1 bg-gradient-to-r from-sky-600/20 to-emerald-600/20 rounded-3xl blur-xl opacity-50 group-hover:opacity-100 transition duration-500 pointer-events-none"></div>
+
+                    <div class="relative z-10 flex flex-col items-center pointer-events-none">
+                        <div class="w-20 h-20 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 text-3xl mb-4 group-hover:scale-110 transition-transform">
+                            <i class="fas fa-cloud-arrow-up"></i>
+                        </div>
+                        <h2 class="text-xl font-bold text-white mb-2">Tarik & Lepaskan File Excel (.xlsx) di Sini</h2>
+                        <p class="text-xs text-slate-400 mb-6 max-w-md">
+                            Unggah template resmi ITDP yang siap dihitung (misal: <code class="text-sky-300 font-mono">TC_1_Arah-A_@HK_x_NAMA.xlsx</code>). Sistem hanya akan membaca dan mengedit file yang Anda masukkan ke slot ini.
+                        </p>
+                        
+                        <div class="px-6 py-3 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-600/30 flex items-center gap-2 border border-sky-400/30 transition-all pointer-events-auto cursor-pointer">
+                            <i class="fas fa-folder-open"></i>
+                            <span>Pilih Berkas dari Komputer</span>
+                        </div>
+                    </div>
+                    <!-- Hidden direct file input -->
+                    <input type="file" id="directFileInput" accept=".xlsx" class="hidden">
+                </div>
+
+                <!-- Quick Pick dari file yang ada di folder kerja (Bila ada) -->
+                <div id="quickPickContainer" class="mt-6 p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs">
+                    <div class="text-slate-400 font-semibold mb-2 flex items-center gap-2">
+                        <i class="fas fa-history text-sky-400"></i>
+                        <span>Atau pilih langsung file template yang tersedia di folder kerja:</span>
+                    </div>
+                    <div id="quickPickFilesList" class="flex flex-wrap gap-2">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION 2: ACTIVE WORKSPACE (Hanya muncul jika file sudah diunggah/dipilih) -->
+        <div id="activeWorkspace" class="hidden flex-col gap-5 flex-1">
+            
+            <!-- Existing Counts Detected Notification Banner -->
+            <div id="existingDataBanner" class="hidden items-center justify-between p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-700/60 text-xs text-emerald-200">
+                <div class="flex items-center gap-2.5">
+                    <i class="fas fa-check-circle text-emerald-400 text-base"></i>
+                    <div>
+                        <span class="font-bold text-white">Data Sesi Sebelumnya Terdeteksi!</span>
+                        <span id="existingDataStats" class="ml-1 text-emerald-300">File ini sudah memuat data hitungan. Data langsung terbaca dan Anda dapat melanjutkan tanpa mulai dari 0.</span>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('existingDataBanner').classList.add('hidden')" class="text-emerald-400 hover:text-white text-xs px-2 py-1 cursor-pointer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Metadata Header Card (Otomatis dari Header Excel & Sheet Index) -->
+            <section class="bg-slate-900/80 rounded-2xl p-4 border border-slate-800/80 shadow-md">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 text-xs">
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Titik Survei</div>
+                        <div id="headerTitik" class="text-sm font-bold text-sky-400 font-mono mt-0.5">-</div>
+                    </div>
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Arah Gerak</div>
+                        <div id="headerArah" class="text-sm font-bold text-white mt-0.5">-</div>
+                    </div>
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Hari / Tgl</div>
+                        <div id="headerHari" class="text-sm font-bold text-white mt-0.5 truncate">-</div>
+                    </div>
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Ruas Jalan</div>
+                        <div id="headerRuas" class="text-sm font-bold text-white mt-0.5 truncate" title="">-</div>
+                    </div>
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Rute (Dari ➔ Ke)</div>
+                        <div id="headerDariKe" class="text-sm font-bold text-white mt-0.5 truncate">-</div>
+                    </div>
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Tipe Ruas</div>
+                        <div id="headerTipe" class="text-sm font-bold text-amber-400 mt-0.5 truncate">-</div>
+                    </div>
+                    <div class="bg-slate-850 p-2.5 rounded-xl border border-slate-750/70">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Pencacah</div>
+                        <div id="headerPencacah" class="text-sm font-bold text-emerald-400 mt-0.5 truncate">-</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Controls, Locked Paket / Kelompok Badges & Catatan Bar -->
+            <section class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800 text-xs">
+                
+                <div class="flex items-center gap-2.5 flex-wrap">
+                    
+                    <!-- Paket Badge (Terkunci Sesuai Nama File) -->
+                    <div id="packageBadgeContainer" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-700 text-slate-200">
+                        <i class="fas fa-lock text-sky-400 text-xs"></i>
+                        <span class="text-slate-400">Paket:</span>
+                        <span id="packageBadgeText" class="font-bold font-mono text-sky-300">-</span>
+                    </div>
+
+                    <!-- Kelompok Kendaraan Badge (Khusus Ruas 8/2 D atau Semua untuk non-8) -->
+                    <div id="kelompokBadgeContainer" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-700 text-slate-200">
+                        <i class="fas fa-road text-amber-400 text-xs"></i>
+                        <span class="text-slate-400">Kelompok:</span>
+                        <span id="kelompokBadgeText" class="font-bold text-amber-300">-</span>
+                        <select id="kelompokSelect" onchange="changeKelompok(this.value)" class="hidden bg-slate-800 border border-slate-600 rounded px-2.5 py-1 text-xs text-white outline-none cursor-pointer">
+                            <option value="ALL">Semua Kategori (Kolom C s/d Q · 15 Kolom)</option>
+                            <option value="K1">K1: Motor & Barang (Kolom C, E, F, G, L)</option>
+                            <option value="K2">K2: Mobil & Bus (Kolom D, H–K, M–Q)</option>
+                        </select>
+                    </div>
+
+                    <!-- Sound FX Toggle Button -->
+                    <button type="button" id="soundToggle" class="px-3 py-1.5 rounded-xl bg-slate-850 hover:bg-slate-750 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer">
+                        <i class="fas fa-volume-up text-emerald-400"></i>
+                        <span>Suara Aktif</span>
+                    </button>
+                </div>
+
+                <!-- Catatan Pengamatan / Cuaca (Kolom Y4) -->
+                <div class="flex items-center gap-2 flex-1 min-w-[280px]">
+                    <span class="text-slate-400 font-semibold flex-shrink-0"><i class="fas fa-sticky-note text-amber-400 mr-1"></i>Catatan:</span>
+                    <input type="text" id="catatanInput" placeholder="Contoh: Gerimis 16.30–17.15; video goyang 18.00–18.10" class="w-full bg-slate-850 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500">
+                </div>
+            </section>
+
+            <!-- TAB 1: KONSOL HITUNG (COUNTER MODE) -->
+            <div id="counterModeContainer" class="flex flex-col gap-5">
+                
+                <!-- 15-Minute Session Timeline ("Anti-Numpuk") -->
+                <section class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 shadow-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Pilih Sesi 15 Menit</h3>
+                            <span class="text-[11px] text-slate-500">(1 Sesi Aktif Pada 1 Waktu · Anti-Numpuk)</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="goToPrevSession()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 flex items-center justify-center border border-slate-700 text-xs cursor-pointer" title="Sesi Sebelumnya (Arrow Left)">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <button type="button" onclick="goToNextSession()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 flex items-center justify-center border border-slate-700 text-xs cursor-pointer" title="Sesi Berikutnya (Arrow Right)">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Horizontal Scrollable Sesi Chips -->
+                    <div id="sessionTimelineContainer" class="flex items-center gap-2 overflow-x-auto pb-2 pt-1">
+                        <!-- Dynamically populated via JS -->
+                    </div>
+                </section>
+
+                <!-- Current Active Session Workspace -->
+                <section class="flex flex-col gap-5 flex-1">
+                    
+                    <!-- Session Banner -->
+                    <div id="activeSessionBanner" class="flex flex-wrap items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-sky-900/60 via-slate-850 to-slate-900 border border-sky-700/40 shadow-xl">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 text-xl font-bold font-mono">
+                                <i class="fas fa-stopwatch"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span id="activeSessionTime" class="text-2xl font-black font-mono-numbers text-white tracking-tight">06.00-06.15</span>
+                                    <span id="activeSessionRow" class="px-2 py-0.5 rounded-md text-xs font-bold font-mono bg-slate-800 text-sky-300 border border-slate-700">Baris 11</span>
+                                    <span id="activeSessionEvTag" class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">⚡ EV Aktif</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs text-slate-300 mt-0.5">
+                                    <span id="activeSessionPeriod" class="font-semibold text-sky-300">Peak Pagi</span>
+                                    <span>·</span>
+                                    <span>Gunakan hotkey <kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-sky-400 font-mono font-bold border border-slate-700">1</kbd>–<kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-sky-400 font-mono font-bold border border-slate-700">9</kbd> untuk counting cepat</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Session Stats Counter -->
+                        <div class="flex items-center gap-4 mt-2 sm:mt-0">
+                            <div class="text-right">
+                                <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Total Sesi Ini</div>
+                                <div class="text-2xl font-black font-mono-numbers text-emerald-400" id="sessionTotalVehicles">0</div>
+                            </div>
+                            <div class="h-8 w-px bg-slate-750"></div>
+                            <div class="text-right text-xs">
+                                <div class="text-slate-400">Non-EV: <span class="font-bold text-white font-mono" id="sessionNonEvTotal">0</span></div>
+                                <div class="text-slate-400">Listrik: <span class="font-bold text-emerald-300 font-mono" id="sessionEvTotal">0</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Panel 1: Kendaraan Nonlistrik (Kolom C s/d K) -->
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                                <i class="fas fa-gas-pump text-sky-400"></i>
+                                <span>Kendaraan Nonlistrik (Kolom C s/d K · 9 Kategori)</span>
+                            </h3>
+                            <span class="text-xs text-slate-400">Dipakai dari jam 06.00 s/d 22.00</span>
+                        </div>
+
+                        <!-- Non-EV Card Grid -->
+                        <div id="nonEvCardsContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3.5">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Panel 2: Kendaraan Listrik / EV (Kolom L s/d Q) - STRICT TIMING 06.00-07.00 -->
+                    <div id="evSectionWrapper" class="transition-all duration-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                                <i class="fas fa-bolt text-emerald-400"></i>
+                                <span>Kendaraan Listrik / EV (Kolom L s/d Q · Jam 06.00–07.00 Saja)</span>
+                            </h3>
+                            <span id="evTimingBadge" class="text-xs text-emerald-400/80 font-medium bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-800/60">
+                                Aturan ITDP: Hanya baris 11–14
+                            </span>
+                        </div>
+
+                        <!-- EV Card Grid (Hanya aktif baris 11-14) -->
+                        <div id="evCardsContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3.5">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+
+                        <!-- Notice when EV is disabled (jam > 07.00) -->
+                        <div id="evNoticeDisabled" class="hidden p-5 rounded-2xl bg-slate-900/90 border border-amber-800/60 text-center text-xs">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-lg mx-auto mb-2">
+                                <i class="fas fa-lock"></i>
+                            </div>
+                            <p class="font-bold text-sm text-amber-300">Kendaraan Listrik (EV) Dinonaktifkan di Luar Jam 06.00 – 07.00</p>
+                            <p class="text-slate-400 mt-1 max-w-xl mx-auto">
+                                Sesuai pedoman resmi ITDP Slide 16: Kendaraan listrik hanya dihitung terpisah pada baris 11–14 (06.00–07.00). Mulai jam 07.00 ke atas, jika melihat kendaraan listrik, <strong class="text-white">hitung langsung ke kategori konvensional di atas (C s/d K)</strong>. Kolom EV di Excel tidak boleh diisi.
+                            </p>
+                        </div>
+                    </div>
+
+                </section>
+
+                <!-- Sticky Bottom Actions Bar (Khusus Mode Counter) -->
+                <div class="sticky bottom-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 lg:px-8 py-3.5 shadow-2xl rounded-2xl mt-4">
+                    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+                        
+                        <!-- Progress Info -->
+                        <div class="flex items-center gap-3">
+                            <div class="text-xs">
+                                <div class="font-bold text-white" id="overallProgressText">0 / 16 Sesi Terverifikasi</div>
+                                <div class="w-36 h-2 bg-slate-800 rounded-full mt-1 overflow-hidden border border-slate-700">
+                                    <div id="overallProgressBar" class="h-full bg-gradient-to-r from-sky-500 to-emerald-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons Deck -->
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <button type="button" onclick="resetCurrentSession()" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-700/50 text-slate-300 hover:text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer">
+                                <i class="fas fa-undo"></i>
+                                <span>Reset Sesi Ini</span>
+                            </button>
+
+                            <button type="button" onclick="fillZerosCurrentSession()" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer">
+                                <i class="fas fa-check-double text-sky-400"></i>
+                                <span>Isi 0 Otomatis</span>
+                            </button>
+
+                            <!-- Primary Verify & Advance Button -->
+                            <button type="button" onclick="verifyCurrentSession()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/25 border border-sky-300/30 flex items-center gap-2 transition-all active:scale-95 cursor-pointer">
+                                <i class="fas fa-check-circle text-sm"></i>
+                                <span>Verifikasi & Sesi Berikutnya</span>
+                                <kbd class="hidden sm:inline-block ml-1 px-1.5 py-0.5 rounded bg-sky-700/60 text-[10px] font-mono border border-sky-400/30">Space / Ctrl+Enter</kbd>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TAB 2: TAMPILAN VIEW EXCEL (SPREADSHEET VIEWER) -->
+            <div id="excelViewModeContainer" class="hidden flex-col gap-4">
+                
+                <div class="flex items-center justify-between p-4 bg-slate-900/90 rounded-2xl border border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-lg">
+                            <i class="fas fa-table"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                Tampilan View Spreadsheet Excel
+                                <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Live Preview</span>
+                            </h3>
+                            <p class="text-xs text-slate-400">Menampilkan sel berarsir biru & kuning serta perhitungan otomatis kolom total R–Z.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400">Legenda Arsir:</span>
+                        <span class="px-2 py-1 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-700">Biru = Peak / EV</span>
+                        <span class="px-2 py-1 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700">Kuning = 16 Jam</span>
+                    </div>
+                </div>
+
+                <!-- Spreadsheet Table Container -->
+                <div class="overflow-x-auto border border-slate-800 rounded-2xl bg-slate-900/90 shadow-xl max-h-[75vh]">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="bg-slate-850 sticky top-0 z-20 text-[10px] font-mono uppercase tracking-wider text-slate-300 border-b border-slate-750">
+                            <tr>
+                                <th class="p-2 border-r border-slate-750 bg-slate-850 text-center w-12">Baris</th>
+                                <th class="p-2 border-r border-slate-750 bg-slate-850 text-center w-24">Interval (B)</th>
+                                
+                                <!-- Non-EV Columns C-K -->
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Sepeda motor, bajaj">MCY<br><span class="text-[9px] text-slate-400">C</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Mobil penumpang">CAR<br><span class="text-[9px] text-slate-400">D</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Mobil box, pick-up">LGV<br><span class="text-[9px] text-slate-400">E</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Truk 2-3 gandar">MGV<br><span class="text-[9px] text-slate-400">F</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Truk 4+ gandar">HGV<br><span class="text-[9px] text-slate-400">G</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Mikrolet, JAK">MIKRO<br><span class="text-[9px] text-slate-400">H</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Bus kecil">LBUS<br><span class="text-[9px] text-slate-400">I</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Bus sedang">MBUS<br><span class="text-[9px] text-slate-400">J</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-sky-950/60 text-sky-300" title="Bus gandeng/tingkat">HBUS<br><span class="text-[9px] text-slate-400">K</span></th>
+                                
+                                <!-- EV Columns L-Q -->
+                                <th class="p-2 border-r border-slate-750 text-center bg-emerald-950/60 text-emerald-300">MCY EV<br><span class="text-[9px] text-slate-400">L</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-emerald-950/60 text-emerald-300">CAR EV<br><span class="text-[9px] text-slate-400">M</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-emerald-950/60 text-emerald-300">MIKRO EV<br><span class="text-[9px] text-slate-400">N</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-emerald-950/60 text-emerald-300">LBUS EV<br><span class="text-[9px] text-slate-400">O</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-emerald-950/60 text-emerald-300">MBUS EV<br><span class="text-[9px] text-slate-400">P</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-emerald-950/60 text-emerald-300">HBUS EV<br><span class="text-[9px] text-slate-400">Q</span></th>
+                                
+                                <!-- Total Formulas Columns R-Z -->
+                                <th class="p-2 border-r border-slate-750 text-center bg-slate-800 text-slate-300 font-bold">Tot MCY<br><span class="text-[9px] text-slate-400">R</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-slate-800 text-slate-300 font-bold">Tot CAR<br><span class="text-[9px] text-slate-400">S</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-slate-800 text-slate-300 font-bold">Tot BUS<br><span class="text-[9px] text-slate-400">X</span></th>
+                                <th class="p-2 border-r border-slate-750 text-center bg-slate-800 text-amber-300 font-bold">Tot 15m<br><span class="text-[9px] text-slate-400">Y</span></th>
+                                <th class="p-2 text-center bg-slate-800 text-emerald-400 font-bold">Grand Tot<br><span class="text-[9px] text-slate-400">Z</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="excelSpreadsheetTableBody">
+                            <!-- Populated dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Review & QC Modal -->
+    <div id="reviewModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div class="bg-slate-900 border border-slate-750 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-850">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-clipboard-check text-sky-400 text-lg"></i>
+                    <h3 class="text-base font-bold text-white">Review Rekapitulasi Data & QC Checklist ITDP</h3>
+                </div>
+                <button type="button" onclick="closeReviewModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white flex items-center justify-center text-sm cursor-pointer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-5 overflow-y-auto space-y-4">
+                
+                <!-- QC Analysis Container -->
+                <div id="qcChecklistContainer"></div>
+
+                <!-- Summary Table -->
+                <div class="overflow-x-auto border border-slate-800 rounded-xl">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-850 text-[11px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+                            <tr>
+                                <th class="p-2.5">Baris</th>
+                                <th class="p-2.5">Interval</th>
+                                <th class="p-2.5">Warna</th>
+                                <th class="p-2.5 text-center">MCY</th>
+                                <th class="p-2.5 text-center">CAR</th>
+                                <th class="p-2.5 text-center">LGV</th>
+                                <th class="p-2.5 text-center">MGV</th>
+                                <th class="p-2.5 text-center">HGV</th>
+                                <th class="p-2.5 text-center">MIKRO</th>
+                                <th class="p-2.5 text-center">LBUS</th>
+                                <th class="p-2.5 text-center">MBUS</th>
+                                <th class="p-2.5 text-center">HBUS</th>
+                                <th class="p-2.5 text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviewTableBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-slate-800 bg-slate-850 flex items-center justify-between">
+                <button type="button" onclick="closeReviewModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 font-semibold text-xs border border-slate-700 cursor-pointer">
+                    Tutup Review
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="downloadCurrentExcel()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-white font-semibold text-xs border border-slate-700 flex items-center gap-1.5 cursor-pointer">
+                        <i class="fas fa-download text-emerald-400"></i>
+                        <span>Unduh Excel</span>
+                    </button>
+                    <button type="button" onclick="syncToExcel(); closeReviewModal();" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2 cursor-pointer">
+                        <i class="fas fa-save"></i>
+                        <span>Simpan & Tulis ke Excel</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 opacity-0 translate-y-4 pointer-events-none transition-all duration-300"></div>
+
+    <!-- Scripts with Cache Busting -->
+    <script src="/static/js/audio.js?v=2.2"></script>
+    <script src="/static/js/app.js?v=2.2"></script>
+</body>
+</html>
