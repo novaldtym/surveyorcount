@@ -7,6 +7,7 @@ Mendukung hosting gratis (Render, Hugging Face, PythonAnywhere, Railway, dsb).
 import os
 import glob
 import uuid
+import tempfile
 from flask import Flask, render_template, request, jsonify, send_file, session
 from werkzeug.utils import secure_filename
 from excel_engine import (
@@ -22,7 +23,12 @@ from excel_engine import (
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "itdp-traffic-counting-secret-key-2026-production")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+
+# Gunakan /tmp pada serverless cloud seperti Vercel agar tidak error read-only filesystem
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "surveyor_uploads")
+else:
+    UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Simpan state sementara per user session agar tidak bertabrakan saat diakses banyak surveyor
