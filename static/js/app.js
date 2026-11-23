@@ -1,8 +1,12 @@
 /**
- * Frontend Application Logic untuk Traffic Counting ITDP v2.2
+ * Frontend Application Logic untuk Traffic Counting ITDP v2.3
  * Pemetaan Lengkap 15 Kolom Kendaraan Sesuai Excel:
  * - 9 Kolom Nonlistrik (C s/d K): MCY, CAR, LGV, MGV, HGV, MIKROBUS, LBUS, MBUS, HBUS
  * - 6 Kolom Listrik EV (L s/d Q): MCY, CAR, MIKROBUS, LBUS, MBUS, HBUS (Aktif 06.00–07.00)
+ * Fitur v2.3:
+ * - Tombol -5 dan -1 untuk koreksi cepat
+ * - Input langsung angka (bisa diketik manual)
+ * - Hotkey Shift + 1..6 untuk EV (hardware keycode mapping)
  */
 
 const AppState = {
@@ -518,7 +522,7 @@ function renderCounterDeck() {
     updateSessionCounterSummary();
 }
 
-// 14. Create Counter Card Component (Dengan Label Kolom Jelas)
+// 14. Create Counter Card Component (Dengan Label Kolom Jelas & Input Manual)
 function createCounterCard({ cat, val, isEv, badgeColor }) {
     const card = document.createElement("div");
     card.id = `card-${cat.code}`;
@@ -550,22 +554,45 @@ function createCounterCard({ cat, val, isEv, badgeColor }) {
             </span>
         </div>
 
-        <div class="my-2 flex items-center justify-between bg-slate-900/80 rounded-xl p-3 border border-slate-800">
-            <button type="button" onclick="decrementTally('${cat.code}')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-300 active:scale-90 transition-all border border-slate-700 text-sm font-bold cursor-pointer" title="Kurangi 1 (-1)">
-                <i class="fas fa-minus"></i>
-            </button>
-            <div class="flex flex-col items-center">
-                <span id="counter-val-${cat.code}" class="text-3xl font-extrabold font-mono-numbers text-white tracking-tight">
-                    ${val}
-                </span>
+        <!-- Kontrol Input & Tombol Cepat: -5, -1, Input Langsung, +1, +5 -->
+        <div class="my-2 flex items-center justify-between gap-1.5 bg-slate-900/90 rounded-xl p-2.5 border border-slate-800">
+            <!-- Tombol Pengurang: -5 dan -1 -->
+            <div class="flex items-center gap-1">
+                <button type="button" onclick="decrementTally('${cat.code}', 5)" class="h-9 px-2 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-300 active:scale-90 transition-all border border-slate-700 text-xs font-mono font-bold cursor-pointer" title="Kurangi 5 (-5)">
+                    -5
+                </button>
+                <button type="button" onclick="decrementTally('${cat.code}', 1)" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-300 active:scale-90 transition-all border border-slate-700 text-xs font-bold cursor-pointer" title="Kurangi 1 (-1)">
+                    <i class="fas fa-minus"></i>
+                </button>
+            </div>
+
+            <!-- Input Nilai Langsung (Bisa Diketik Manual & Live Sync) -->
+            <div class="flex flex-col items-center flex-1 mx-1">
+                <input type="number" 
+                       id="counter-val-${cat.code}" 
+                       value="${val}" 
+                       min="0"
+                       step="1"
+                       oninput="setManualTally('${cat.code}', this.value)"
+                       onchange="if(this.value === '' || parseInt(this.value, 10) < 0) { this.value = 0; setManualTally('${cat.code}', 0); }"
+                       class="w-full max-w-[84px] text-center text-2xl sm:text-3xl font-extrabold font-mono text-white bg-slate-950/80 rounded-lg border border-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-500/30 focus:outline-none py-0.5 px-1 tracking-tight"
+                       title="Ketik manual angka langsung di sini bila ada revisi" />
                 <span class="text-[10px] text-slate-400 font-medium">kendaraan</span>
             </div>
-            <button type="button" onclick="incrementTally('${cat.code}', 5)" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-sky-900/40 text-slate-300 hover:text-sky-300 active:scale-90 transition-all border border-slate-700 text-xs font-bold cursor-pointer" title="Tambah 5 (+5)">
-                +5
-            </button>
+
+            <!-- Tombol Penambah: +1 dan +5 -->
+            <div class="flex items-center gap-1">
+                <button type="button" onclick="incrementTally('${cat.code}', 1)" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-sky-900/40 text-slate-300 hover:text-sky-300 active:scale-90 transition-all border border-slate-700 text-xs font-mono font-bold cursor-pointer" title="Tambah 1 (+1)">
+                    +1
+                </button>
+                <button type="button" onclick="incrementTally('${cat.code}', 5)" class="h-9 px-2 rounded-lg bg-slate-800 hover:bg-sky-900/40 text-slate-300 hover:text-sky-300 active:scale-90 transition-all border border-slate-700 text-xs font-mono font-bold cursor-pointer" title="Tambah 5 (+5)">
+                    +5
+                </button>
+            </div>
         </div>
 
-        <button type="button" onclick="incrementTally('${cat.code}', 1)" class="tally-btn-active w-full py-3.5 mt-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-base shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 border border-sky-400/30 transition-all cursor-pointer">
+        <!-- Tombol Utama Pencacahan (+1) -->
+        <button type="button" onclick="incrementTally('${cat.code}', 1)" class="tally-btn-active w-full py-3.5 mt-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-sm sm:text-base shadow-lg shadow-sky-600/30 flex items-center justify-center gap-2 border border-sky-400/30 transition-all cursor-pointer">
             <i class="fas fa-plus text-sm"></i>
             HITUNG +1
         </button>
@@ -574,7 +601,32 @@ function createCounterCard({ cat, val, isEv, badgeColor }) {
     return card;
 }
 
-// 15. Tally Actions
+// 15. Tally Actions & Manual Edit
+function setManualTally(code, rawVal) {
+    const row = AppState.activeRow;
+    const isEv = code.endsWith("_EV");
+    if (isEv && !(11 <= row && row <= 14)) {
+        showToast("Kendaraan listrik hanya aktif di jam 06.00-07.00!", "error");
+        return;
+    }
+
+    if (!AppState.countsData[String(row)]) {
+        AppState.countsData[String(row)] = { counts: {}, status: "draft" };
+    }
+    const sess = AppState.countsData[String(row)];
+    
+    let parsed = parseInt(rawVal, 10);
+    if (isNaN(parsed) || parsed < 0) {
+        parsed = 0;
+    }
+
+    sess.counts[code] = parsed;
+    sess.status = "draft";
+
+    animateCounterBump(code);
+    updateSessionCounterSummary();
+}
+
 function incrementTally(code, delta = 1) {
     const row = AppState.activeRow;
     const isEv = code.endsWith("_EV");
@@ -596,26 +648,33 @@ function incrementTally(code, delta = 1) {
     animateCounterBump(code);
 
     const el = document.getElementById(`counter-val-${code}`);
-    if (el) el.textContent = newVal;
+    if (el) {
+        if (el.tagName === "INPUT") el.value = newVal;
+        else el.textContent = newVal;
+    }
 
     updateSessionCounterSummary();
 }
 
-function decrementTally(code) {
+function decrementTally(code, delta = 1) {
     const row = AppState.activeRow;
     if (!AppState.countsData[String(row)]) return;
     const sess = AppState.countsData[String(row)];
     const curVal = sess.counts[code] || 0;
     if (curVal <= 0) return;
 
-    sess.counts[code] = curVal - 1;
+    const newVal = Math.max(0, curVal - delta);
+    sess.counts[code] = newVal;
     sess.status = "draft";
 
     window.soundFx.playDecrement();
     animateCounterBump(code);
 
     const el = document.getElementById(`counter-val-${code}`);
-    if (el) el.textContent = sess.counts[code];
+    if (el) {
+        if (el.tagName === "INPUT") el.value = newVal;
+        else el.textContent = newVal;
+    }
 
     updateSessionCounterSummary();
 }
@@ -752,12 +811,47 @@ function goToNextSession() {
     }
 }
 
-// 18. Keyboard Shortcuts
+// 18. Keyboard Shortcuts (Mendukung Shift + 1..6 untuk EV & 1..9 untuk Non-EV)
+function getDigitFromEvent(e) {
+    // A. Deteksi fisik tombol (hardware independent - bekerja di semua OS & layout)
+    if (e.code) {
+        const m = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
+        if (m) return parseInt(m[1], 10);
+    }
+    // B. Deteksi e.key numerik biasa
+    if (/^[1-9]$/.test(e.key)) {
+        return parseInt(e.key, 10);
+    }
+    // C. Pemetaan simbol Shift pada keyboard QWERTY standar (!, @, #, $, %, ^, &, *, ()
+    const shiftSymbols = {
+        '!': 1,
+        '@': 2,
+        '#': 3,
+        '$': 4,
+        '%': 5,
+        '^': 6,
+        '&': 7,
+        '*': 8,
+        '(': 9
+    };
+    if (shiftSymbols[e.key]) {
+        return shiftSymbols[e.key];
+    }
+    return null;
+}
+
 function setupKeyboardShortcuts() {
     window.addEventListener("keydown", (e) => {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        // Jangan picu hotkey bila sedang mengetik angka langsung di input atau text field
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+            if (e.key === "Enter") {
+                e.target.blur(); // Enter untuk selesai input
+            }
+            return;
+        }
         if (!AppState.hasFile) return;
 
+        // Navigasi & Verifikasi Sesi
         if ((e.ctrlKey && e.key === "Enter") || e.code === "Space") {
             e.preventDefault();
             verifyCurrentSession();
@@ -776,41 +870,66 @@ function setupKeyboardShortcuts() {
         }
 
         const isShift = e.shiftKey;
-        const keyNum = e.key;
+        const digit = getDigitFromEvent(e);
+        if (!digit) return;
 
         if (isShift) {
+            // Hotkey Kendaraan Listrik / EV: Shift + 1 s/d 6
             if (11 <= AppState.activeRow && AppState.activeRow <= 14) {
-                // Support Shift + 1..6 or Shift + category hotkey
-                const matched = AppState.templateData.categories_ev.find(c => 
-                    c.hotkey === `Shift+${keyNum}` ||
-                    (keyNum === '1' && c.col_letter === 'L') ||
-                    (keyNum === '2' && c.col_letter === 'M') ||
-                    (keyNum === '3' && c.col_letter === 'N') ||
-                    (keyNum === '6' && c.col_letter === 'N') ||
-                    (keyNum === '4' && c.col_letter === 'O') ||
-                    (keyNum === '7' && c.col_letter === 'O') ||
-                    (keyNum === '5' && c.col_letter === 'P') ||
-                    (keyNum === '8' && c.col_letter === 'P') ||
-                    (keyNum === '6' && c.col_letter === 'Q') ||
-                    (keyNum === '9' && c.col_letter === 'Q')
-                );
-                if (matched) {
+                const evMap = {
+                    1: "MCY_EV",      // Kolom L
+                    2: "CAR_EV",      // Kolom M
+                    3: "MIKROBUS_EV", // Kolom N
+                    4: "LBUS_EV",     // Kolom O
+                    5: "MBUS_EV",     // Kolom P
+                    6: "HBUS_EV"      // Kolom Q
+                };
+                const targetCode = evMap[digit];
+                if (targetCode) {
+                    // Hormati filter kelompok K1 / K2 bila aktif
+                    if (AppState.templateData && AppState.templateData.categories_ev) {
+                        const catObj = AppState.templateData.categories_ev.find(c => c.code === targetCode);
+                        if (catObj) {
+                            if (AppState.kelompokFilter === "K1" && catObj.k_type !== "K1") return;
+                            if (AppState.kelompokFilter === "K2" && catObj.k_type !== "K2") return;
+                        }
+                    }
                     e.preventDefault();
-                    incrementTally(matched.code, 1);
+                    incrementTally(targetCode, 1);
                     return;
                 }
             } else {
-                if (/^[1-9]$/.test(keyNum)) {
+                if (digit >= 1 && digit <= 6) {
                     e.preventDefault();
                     showToast("Kendaraan listrik dinonaktifkan di luar jam 06.00–07.00!", "error");
                     return;
                 }
             }
-        } else if (/^[1-9]$/.test(keyNum)) {
-            const matched = AppState.templateData.categories_non_ev.find(c => c.hotkey === keyNum);
-            if (matched) {
+        } else {
+            // Hotkey Kendaraan Nonlistrik: 1 s/d 9
+            const nonEvMap = {
+                1: "MCY",      // Kolom C
+                2: "CAR",      // Kolom D
+                3: "LGV",      // Kolom E
+                4: "MGV",      // Kolom F
+                5: "HGV",      // Kolom G
+                6: "MIKROBUS", // Kolom H
+                7: "LBUS",     // Kolom I
+                8: "MBUS",     // Kolom J
+                9: "HBUS"      // Kolom K
+            };
+            const targetCode = nonEvMap[digit];
+            if (targetCode) {
+                // Hormati filter kelompok K1 / K2 bila aktif
+                if (AppState.templateData && AppState.templateData.categories_non_ev) {
+                    const catObj = AppState.templateData.categories_non_ev.find(c => c.code === targetCode);
+                    if (catObj) {
+                        if (AppState.kelompokFilter === "K1" && catObj.k_type !== "K1") return;
+                        if (AppState.kelompokFilter === "K2" && catObj.k_type !== "K2") return;
+                    }
+                }
                 e.preventDefault();
-                incrementTally(matched.code, 1);
+                incrementTally(targetCode, 1);
                 return;
             }
         }
