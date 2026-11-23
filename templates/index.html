@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Traffic Counting ITDP · Surveyor Counter Console v2.3</title>
+    <title>Traffic Counting ITDP · Surveyor Counter Console v2.4</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -24,7 +24,7 @@
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.3">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.4">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white">
 
@@ -40,7 +40,7 @@
                 <div>
                     <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
                         TRAFFIC COUNTING CONSOLE
-                        <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-950 text-sky-400 border border-sky-800">CLEAR - ITDP v2.3</span>
+                        <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-950 text-sky-400 border border-sky-800">CLEAR - ITDP v2.4</span>
                     </h1>
                     <p class="text-xs text-slate-400">Pencacahan CCTV Per 15 Menit · Hanya Mengubah Sel Biru & Kuning</p>
                 </div>
@@ -49,6 +49,12 @@
             <!-- Header Controls & File Info -->
             <div class="flex items-center gap-2 flex-wrap">
                 
+                <!-- Draft Auto-Save Status Indicator -->
+                <div id="draftAutoSaveIndicator" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-850 border border-slate-750 text-[11px] font-mono text-emerald-400">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="draftStatusText">Draf Tersimpan</span>
+                </div>
+
                 <!-- View Mode Switcher (Hanya tampil bila file sudah aktif) -->
                 <div id="viewModeSwitcher" class="hidden items-center bg-slate-850 p-1 rounded-xl border border-slate-750">
                     <button type="button" id="btnModeCounter" onclick="switchViewMode('counter')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-sky-500 text-white shadow-md">
@@ -72,6 +78,12 @@
 
                 <!-- Action Buttons (Aktif saat file terunggah) -->
                 <div id="fileActionButtons" class="hidden items-center gap-2">
+                    <!-- Cadangkan Draf JSON Button -->
+                    <button type="button" onclick="exportDraftAsJSON()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-300 transition-all cursor-pointer" title="Cadangkan Data Hitungan Sementara (.json)">
+                        <i class="fas fa-file-code text-amber-400"></i>
+                        <span class="hidden sm:inline ml-1">Cadangkan</span>
+                    </button>
+
                     <!-- Review / QC Modal Button -->
                     <button type="button" onclick="openReviewModal()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer">
                         <i class="fas fa-clipboard-check text-sky-400"></i>
@@ -101,6 +113,33 @@
         <section id="dropZoneSlotSection" class="flex flex-col items-center justify-center my-auto py-10">
             <div class="max-w-2xl w-full">
                 
+                <!-- DRAFT RESTORE BANNER (Tampil jika browser mendeteksi draf tersimpan) -->
+                <div id="draftRestoreBanner" class="hidden mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-950/80 via-slate-850 to-slate-900 border border-amber-600/60 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-11 h-11 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 text-lg flex-shrink-0">
+                            <i class="fas fa-clock-rotate-left"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-white text-sm flex items-center gap-2">
+                                Draf Tersimpan Ditemukan
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">Auto-Saved</span>
+                            </div>
+                            <div id="draftBannerDetails" class="text-xs text-slate-300 mt-0.5 font-medium">
+                                Memuat data draf...
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <button type="button" onclick="restoreDraftSession()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 cursor-pointer">
+                            <i class="fas fa-play text-[11px]"></i>
+                            <span>Lanjutkan Draf</span>
+                        </button>
+                        <button type="button" onclick="discardDraftSession()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 border border-slate-700 text-slate-400 text-xs font-semibold cursor-pointer" title="Hapus draf ini">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Main Drag & Drop Zone Box -->
                 <div id="dragDropArea" class="border-2 border-dashed border-sky-500/50 hover:border-sky-400 bg-slate-900/80 hover:bg-slate-900 rounded-3xl p-10 text-center transition-all cursor-pointer shadow-2xl relative overflow-hidden group">
                     <!-- Glow effect -->
@@ -517,7 +556,7 @@
     <div id="toast" class="fixed bottom-6 right-6 z-50 opacity-0 translate-y-4 pointer-events-none transition-all duration-300"></div>
 
     <!-- Scripts with Cache Busting -->
-    <script src="/static/js/audio.js?v=2.3"></script>
-    <script src="/static/js/app.js?v=2.3"></script>
+    <script src="/static/js/audio.js?v=2.4"></script>
+    <script src="/static/js/app.js?v=2.4"></script>
 </body>
 </html>

@@ -1,13 +1,18 @@
 /**
- * Frontend Application Logic untuk Traffic Counting ITDP v2.3
+ * Frontend Application Logic untuk Traffic Counting ITDP v2.4
  * Pemetaan Lengkap 15 Kolom Kendaraan Sesuai Excel:
  * - 9 Kolom Nonlistrik (C s/d K): MCY, CAR, LGV, MGV, HGV, MIKROBUS, LBUS, MBUS, HBUS
  * - 6 Kolom Listrik EV (L s/d Q): MCY, CAR, MIKROBUS, LBUS, MBUS, HBUS (Aktif 06.00–07.00)
- * Fitur v2.3:
- * - Tombol -5 dan -1 untuk koreksi cepat
- * - Input langsung angka (bisa diketik manual)
- * - Hotkey Shift + 1..6 untuk EV (hardware keycode mapping)
+ * Fitur v2.4:
+ * - Penyimpanan Sementara Otomatis (Auto-Save Draft di Browser)
+ * - Multi-Layer Cloud Resilience (Kebal restart / stateless serverless)
+ * - Tombol -5 dan -1 & Input Angka Langsung
+ * - Hotkey Shift + 1..6 untuk EV
+ * - Cadangkan & Pulihkan JSON
  */
+
+const DRAFT_STORAGE_KEY = "itdp_surveyor_draft_v2";
+const DRAFT_FILE_KEY = "itdp_surveyor_file_base64_v2";
 
 const AppState = {
     hasFile: false,
@@ -19,6 +24,7 @@ const AppState = {
     kelompokFilter: "ALL",      // ALL, K1, K2
     countsData: {},
     noteText: "",
+    fileBase64: null,           // Salinan Base64 berkas excel di memori browser
     soundEnabled: true
 };
 
@@ -30,6 +36,7 @@ async function initApp() {
     setupDragAndDrop();
     setupEventListeners();
     setupKeyboardShortcuts();
+    checkSavedDraftBanner();
     await loadQuickPickFiles();
 }
 
@@ -115,6 +122,7 @@ function setupEventListeners() {
     if (noteInput) {
         noteInput.addEventListener("input", (e) => {
             AppState.noteText = e.target.value;
+            scheduleAutoSave();
         });
     }
 }
@@ -149,7 +157,7 @@ async function loadQuickPickFiles() {
     }
 }
 
-// 4. File Upload Handler
+// 4. File Upload Handler (Simpan Base64 ke Memori Lokal Browser)
 async function handleFileUpload(file) {
     if (!file || !file.name) return;
 
@@ -157,6 +165,19 @@ async function handleFileUpload(file) {
         showToast("File harus berekstensi .xlsx", "error");
         return;
     }
+
+    // Baca file ke Base64 secara asinkron untuk cadangan draft offline
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        if (e.target && e.target.result) {
+            const b64 = e.target.result.split(',')[1];
+            AppState.fileBase64 = b64;
+            try {
+                localStorage.setItem(DRAFT_FILE_KEY, b64);
+            } catch(err){}
+        }
+    };
+    reader.readAsDataURL(file);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -169,7 +190,14 @@ async function handleFileUpload(file) {
         });
         const json = await res.json();
         if (json.success) {
+            if (json.file_base64) {
+                AppState.fileBase64 = json.file_base64;
+                try {
+                    localStorage.setItem(DRAFT_FILE_KEY, json.file_base64);
+                } catch(e){}
+            }
             onFileReady(json.data);
+            scheduleAutoSave();
             showToast(json.message, "success");
         } else {
             showToast(json.message || "Gagal memproses berkas.", "error");
@@ -190,7 +218,14 @@ async function loadExistingFile(filepath) {
         });
         const json = await res.json();
         if (json.success) {
+            if (json.file_base64) {
+                AppState.fileBase64 = json.file_base64;
+                try {
+                    localStorage.setItem(DRAFT_FILE_KEY, json.file_base64);
+                } catch(e){}
+            }
             onFileReady(json.data);
+            scheduleAutoSave();
             showToast("Template berhasil dibuka!", "success");
         } else {
             showToast(json.message, "error");
@@ -217,7 +252,7 @@ function onFileReady(data) {
     if (h.kelompok && (h.kelompok === "K1" || h.kelompok === "K2") && h.kelompok_locked) {
         AppState.kelompokFilter = h.kelompok;
     } else {
-        AppState.kelompokFilter = "ALL"; // SEMUA KATEGORI C s/d Q DITAMPILKAN LENGKAP
+        AppState.kelompokFilter = "ALL";
     }
 
     if (AppState.packageFilter === "SR") {
@@ -236,6 +271,12 @@ function onFileReady(data) {
     document.getElementById("activeFilePill").classList.add("flex");
     document.getElementById("fileActionButtons").classList.remove("hidden");
     document.getElementById("fileActionButtons").classList.add("flex");
+
+    const draftInd = document.getElementById("draftAutoSaveIndicator");
+    if (draftInd) {
+        draftInd.classList.remove("hidden");
+        draftInd.classList.add("flex");
+    }
 
     document.getElementById("activeFileName").textContent = data.filename;
     document.getElementById("activeFileName").title = data.filename;
@@ -258,30 +299,37 @@ function onFileReady(data) {
 
 // 7. Close / Ganti File
 async function closeActiveFile() {
-    if (!confirm("Apakah Anda ingin mengganti file? Pastikan data terakhir sudah disimpan ke Excel.")) return;
+    if (!confirm("Apakah Anda ingin mengganti file? Draf saat ini tetap tersimpan sehingga Anda dapat melanjutkannya nanti.")) return;
+    executeAutoSave();
     try {
         await fetch("/api/close-file", { method: "POST" });
-        AppState.hasFile = false;
-        AppState.currentFilepath = null;
-        AppState.templateData = null;
-        AppState.countsData = {};
+    } catch (e) {}
 
-        document.getElementById("dropZoneSlotSection").classList.remove("hidden");
-        document.getElementById("activeWorkspace").classList.add("hidden");
-        document.getElementById("activeWorkspace").classList.remove("flex");
-        document.getElementById("viewModeSwitcher").classList.add("hidden");
-        document.getElementById("viewModeSwitcher").classList.remove("flex");
-        document.getElementById("activeFilePill").classList.add("hidden");
-        document.getElementById("activeFilePill").classList.remove("flex");
-        document.getElementById("fileActionButtons").classList.add("hidden");
-        document.getElementById("fileActionButtons").classList.remove("flex");
-        document.getElementById("existingDataBanner").classList.add("hidden");
+    AppState.hasFile = false;
+    AppState.currentFilepath = null;
+    AppState.templateData = null;
+    AppState.countsData = {};
 
-        await loadQuickPickFiles();
-        showToast("File ditutup. Silakan drag & drop file lain.", "info");
-    } catch (e) {
-        console.error(e);
+    document.getElementById("dropZoneSlotSection").classList.remove("hidden");
+    document.getElementById("activeWorkspace").classList.add("hidden");
+    document.getElementById("activeWorkspace").classList.remove("flex");
+    document.getElementById("viewModeSwitcher").classList.add("hidden");
+    document.getElementById("viewModeSwitcher").classList.remove("flex");
+    document.getElementById("activeFilePill").classList.add("hidden");
+    document.getElementById("activeFilePill").classList.remove("flex");
+    document.getElementById("fileActionButtons").classList.add("hidden");
+    document.getElementById("fileActionButtons").classList.remove("flex");
+    document.getElementById("existingDataBanner").classList.add("hidden");
+
+    const draftInd = document.getElementById("draftAutoSaveIndicator");
+    if (draftInd) {
+        draftInd.classList.add("hidden");
+        draftInd.classList.remove("flex");
     }
+
+    checkSavedDraftBanner();
+    await loadQuickPickFiles();
+    showToast("File ditutup. Draf tersimpan tetap aman di browser.", "info");
 }
 
 // 8. Update Header UI
@@ -625,6 +673,7 @@ function setManualTally(code, rawVal) {
 
     animateCounterBump(code);
     updateSessionCounterSummary();
+    scheduleAutoSave();
 }
 
 function incrementTally(code, delta = 1) {
@@ -654,6 +703,7 @@ function incrementTally(code, delta = 1) {
     }
 
     updateSessionCounterSummary();
+    scheduleAutoSave();
 }
 
 function decrementTally(code, delta = 1) {
@@ -677,6 +727,7 @@ function decrementTally(code, delta = 1) {
     }
 
     updateSessionCounterSummary();
+    scheduleAutoSave();
 }
 
 function animateCounterBump(code) {
@@ -756,6 +807,7 @@ function verifyCurrentSession() {
 
     sess.status = "verified";
     window.soundFx.playSuccess();
+    scheduleAutoSave();
 
     showToast(`Sesi Baris ${row} terverifikasi!`, "success");
     goToNextSession();
@@ -779,6 +831,7 @@ function fillZerosCurrentSession() {
     }
 
     renderCounterDeck();
+    scheduleAutoSave();
     showToast("Semua kategori kosong diisi 0.", "info");
 }
 
@@ -788,6 +841,7 @@ function resetCurrentSession() {
     AppState.countsData[String(row)] = { counts: {}, status: "empty" };
     renderCounterDeck();
     renderSessionTimeline();
+    scheduleAutoSave();
     showToast("Sesi direset ke 0.", "info");
 }
 
@@ -1013,28 +1067,44 @@ function renderExcelSpreadsheetTable() {
     });
 }
 
-// 20. Simpan & Tulis ke Excel
+// 20. Simpan & Tulis ke Excel (Multi-Layer Cloud & Serverless Resilient)
 async function syncToExcel() {
-    if (!AppState.currentFilepath) {
-        showToast("Belum ada file Excel yang dipilih!", "error");
+    if (!AppState.hasFile && !AppState.templateData) {
+        showToast("Belum ada file Excel yang aktif!", "error");
         return;
     }
 
     try {
         showToast("Menulis hasil ke sel biru & kuning file Excel...", "info");
+        const b64 = AppState.fileBase64 || localStorage.getItem(DRAFT_FILE_KEY) || null;
         const res = await fetch("/api/sync-to-excel", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 filepath: AppState.currentFilepath,
+                filename: AppState.templateData ? AppState.templateData.filename : "",
+                file_base64: b64,
                 counts_data: AppState.countsData,
                 catatan: AppState.noteText
             })
         });
         const json = await res.json();
         if (json.success) {
+            // Update salinan file lokal jika server mengembalikan base64 terbaru
+            if (json.file_base64) {
+                AppState.fileBase64 = json.file_base64;
+                try {
+                    localStorage.setItem(DRAFT_FILE_KEY, json.file_base64);
+                } catch (e) {}
+            }
+            if (json.filepath) {
+                AppState.currentFilepath = json.filepath;
+            }
+
+            executeAutoSave();
             window.soundFx.playSuccess();
             showToast(json.message, "success");
+
             getFilteredIntervals().forEach(i => {
                 if (AppState.countsData[String(i.row)]) {
                     AppState.countsData[String(i.row)].status = "verified";
@@ -1044,17 +1114,52 @@ async function syncToExcel() {
             updateSessionCounterSummary();
             renderExcelSpreadsheetTable();
         } else {
-            showToast(json.message, "error");
+            showToast(json.message || "Gagal menyimpan ke Excel.", "error");
         }
     } catch (err) {
         showToast("Gagal menyimpan ke Excel: " + err, "error");
     }
 }
 
-// 21. Unduh File Excel
+// 21. Unduh File Excel (Bisa Langsung dari Memori Browser Blob atau Endpoint Server)
 function downloadCurrentExcel() {
-    if (!AppState.currentFilepath) return;
-    window.location.href = `/api/download?filepath=${encodeURIComponent(AppState.currentFilepath)}`;
+    const filename = AppState.templateData ? AppState.templateData.filename : "hasil_counting.xlsx";
+    const b64 = AppState.fileBase64 || localStorage.getItem(DRAFT_FILE_KEY);
+    
+    // Prioritaskan unduhan instan langsung dari Blob lokal browser
+    if (b64) {
+        try {
+            downloadBase64File(b64, filename);
+            showToast(`Berkas '${filename}' berhasil diunduh!`, "success");
+            return;
+        } catch (e) {
+            console.warn("Gagal unduh via base64 blob, fallback ke endpoint server:", e);
+        }
+    }
+
+    if (AppState.currentFilepath) {
+        window.location.href = `/api/download?filepath=${encodeURIComponent(AppState.currentFilepath)}&filename=${encodeURIComponent(filename)}`;
+    } else {
+        showToast("Belum ada file yang dapat diunduh.", "error");
+    }
+}
+
+function downloadBase64File(base64Data, filename) {
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // 22. Modal Review & QC Checklist
@@ -1175,4 +1280,182 @@ function showToast(message, type = "info") {
     window.toastTimer = setTimeout(() => {
         toast.className = "fixed bottom-6 right-6 z-50 opacity-0 translate-y-4 pointer-events-none transition-all duration-300";
     }, 3200);
+}
+
+// 24. SISTEM PENYIMPANAN SEMENTARA / DRAF OTOMATIS (BROWSER LOCALSTORAGE)
+let autoSaveTimer = null;
+
+function scheduleAutoSave() {
+    if (!AppState.hasFile && !AppState.templateData) return;
+    showDraftSavingIndicator();
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+        executeAutoSave();
+    }, 400);
+}
+
+function executeAutoSave() {
+    if (!AppState.hasFile && !AppState.templateData) return;
+    try {
+        const draftObj = {
+            saved_at: Date.now(),
+            filename: AppState.templateData ? AppState.templateData.filename : "draft.xlsx",
+            filepath: AppState.currentFilepath,
+            templateData: AppState.templateData,
+            countsData: AppState.countsData,
+            activeRow: AppState.activeRow,
+            noteText: AppState.noteText,
+            packageFilter: AppState.packageFilter,
+            kelompokFilter: AppState.kelompokFilter
+        };
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftObj));
+        if (AppState.fileBase64) {
+            try {
+                localStorage.setItem(DRAFT_FILE_KEY, AppState.fileBase64);
+            } catch (e) {
+                console.warn("Storage quota limit for file_base64 in localStorage:", e);
+            }
+        }
+        showDraftSavedIndicator();
+    } catch (err) {
+        console.error("Gagal simpan draft lokal:", err);
+    }
+}
+
+function checkSavedDraftBanner() {
+    const banner = document.getElementById("draftRestoreBanner");
+    const details = document.getElementById("draftBannerDetails");
+    if (!banner || !details) return;
+
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) {
+        banner.classList.add("hidden");
+        banner.classList.remove("flex");
+        return;
+    }
+
+    try {
+        const draft = JSON.parse(raw);
+        if (!draft || !draft.templateData) {
+            banner.classList.add("hidden");
+            banner.classList.remove("flex");
+            return;
+        }
+
+        let totalVehicles = 0;
+        let filledSessions = 0;
+        const counts = draft.countsData || {};
+        Object.keys(counts).forEach(row => {
+            const sess = counts[row];
+            if (sess && sess.counts) {
+                let rowSum = 0;
+                Object.values(sess.counts).forEach(v => { if (typeof v === "number") rowSum += v; });
+                if (rowSum > 0 || sess.status === "verified") {
+                    filledSessions++;
+                    totalVehicles += rowSum;
+                }
+            }
+        });
+
+        const dateStr = draft.saved_at ? new Date(draft.saved_at).toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' }) : "-";
+        details.innerHTML = `<span class="font-bold text-white">${draft.filename || "Template"}</span> · <span class="text-amber-300 font-mono font-bold">${totalVehicles} kendaraan</span> · <span class="text-sky-300 font-mono">${filledSessions} sesi terisi</span> · <span class="text-slate-400">Pukul ${dateStr}</span>`;
+
+        banner.classList.remove("hidden");
+        banner.classList.add("flex");
+    } catch (e) {
+        banner.classList.add("hidden");
+        banner.classList.remove("flex");
+    }
+}
+
+function restoreDraftSession() {
+    try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (!raw) {
+            showToast("Tidak ada data draf.", "error");
+            return;
+        }
+        const draft = JSON.parse(raw);
+        AppState.fileBase64 = localStorage.getItem(DRAFT_FILE_KEY) || null;
+
+        onFileReady(draft.templateData);
+        AppState.countsData = draft.countsData || {};
+        AppState.activeRow = draft.activeRow || (draft.packageFilter === "SR" ? 51 : 11);
+        AppState.noteText = draft.noteText || "";
+        AppState.packageFilter = draft.packageFilter || "ALL";
+        AppState.kelompokFilter = draft.kelompokFilter || "ALL";
+        AppState.currentFilepath = draft.filepath;
+
+        renderSessionTimeline();
+        renderCounterDeck();
+        renderExcelSpreadsheetTable();
+        showDraftSavedIndicator();
+
+        const banner = document.getElementById("draftRestoreBanner");
+        if (banner) {
+            banner.classList.add("hidden");
+            banner.classList.remove("flex");
+        }
+        showToast(`Draf '${draft.filename}' berhasil dipulihkan! Anda bisa langsung melanjutkan tanpa perlu upload ulang.`, "success");
+    } catch (err) {
+        showToast("Gagal memulihkan draf: " + err, "error");
+    }
+}
+
+function discardDraftSession() {
+    if (!confirm("Yakin ingin menghapus draf ini? Data hitungan yang belum disimpan ke file Excel akan dibersihkan.")) return;
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    localStorage.removeItem(DRAFT_FILE_KEY);
+    const banner = document.getElementById("draftRestoreBanner");
+    if (banner) {
+        banner.classList.add("hidden");
+        banner.classList.remove("flex");
+    }
+    showToast("Draf tersimpan telah dibersihkan.", "info");
+}
+
+function showDraftSavingIndicator() {
+    const ind = document.getElementById("draftAutoSaveIndicator");
+    const txt = document.getElementById("draftStatusText");
+    if (ind && txt) {
+        ind.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-850 border border-slate-750 text-[11px] font-mono text-sky-400";
+        ind.innerHTML = '<span class="w-2 h-2 rounded-full bg-sky-400 animate-ping"></span> <span>Menyimpan draf...</span>';
+    }
+}
+
+function showDraftSavedIndicator() {
+    const ind = document.getElementById("draftAutoSaveIndicator");
+    if (ind) {
+        ind.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-850 border border-slate-750 text-[11px] font-mono text-emerald-400";
+        ind.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>Draf Tersimpan</span>';
+    }
+}
+
+// 25. Cadangkan Data Hitungan ke File JSON
+function exportDraftAsJSON() {
+    if (!AppState.hasFile && !AppState.templateData) {
+        showToast("Belum ada file aktif untuk dicadangkan.", "error");
+        return;
+    }
+    const data = {
+        app_version: "2.4",
+        export_time: new Date().toISOString(),
+        filename: AppState.templateData ? AppState.templateData.filename : "counting_data.xlsx",
+        activeRow: AppState.activeRow,
+        packageFilter: AppState.packageFilter,
+        kelompokFilter: AppState.kelompokFilter,
+        note: AppState.noteText,
+        counts_data: AppState.countsData
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safeName = (data.filename || "survey").replace('.xlsx', '');
+    a.download = `cadangan_draf_${safeName}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Cadangan Draf (.json) berhasil diunduh!", "success");
 }

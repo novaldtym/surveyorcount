@@ -5,6 +5,4 @@ temp_*.xlsx
 test_*.xlsx
 .env
 .DS_Store
-FILE RECAP/
-FILE RECAP
 

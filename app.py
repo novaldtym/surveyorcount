@@ -8,6 +8,8 @@ import os
 import glob
 import uuid
 import tempfile
+import base64
+import shutil
 from flask import Flask, render_template, request, jsonify, send_file, session
 from werkzeug.utils import secure_filename
 from excel_engine import (
@@ -53,6 +55,120 @@ def get_user_cache():
     if uid not in user_sessions_cache:
         user_sessions_cache[uid] = {}
     return user_sessions_cache[uid]
+
+def resolve_target_excel_file(filepath=None, filename=None, file_base64=None):
+    """
+    Menemukan atau merekonstruksi file template Excel target dengan berbagai fallback:
+    1. Cek langsung filepath jika file ada di server.
+    2. Jika client mengirim file_base64, decode dan tulis langsung ke direktori user.
+    3. Jika filepath/filename ada, cari nama file tersebut di:
+       - direktori user aktif
+       - folder 'FILE RECAP'
+       - seluruh subdirektori UPLOAD_DIR
+       - BASE_DIR
+    4. Jika file belum ada di server (misal serverless Vercel baru / container recycle):
+       Duplikasi base template resmi (Arah-A atau Arah-B) menjadi nama file yang dituju,
+       lalu perbarui sel header (titik, hari, arah, pencacah).
+    """
+    user_dir = get_user_storage_dir()
+    
+    # 1. Path langsung masih ada di server
+    if filepath and os.path.exists(filepath):
+        return filepath
+        
+    target_filename = filename or (os.path.basename(filepath) if filepath else None)
+    
+    # 2. Decode dari Base64 jika client mengirimkan salinan berkas
+    if file_base64 and target_filename:
+        safe_name = os.path.basename(target_filename)
+        dest_path = os.path.join(user_dir, safe_name)
+        try:
+            with open(dest_path, "wb") as f:
+                f.write(base64.b64decode(file_base64))
+            return dest_path
+        except Exception as e:
+            print(f"Gagal decode file_base64: {e}")
+            
+    if not target_filename:
+        target_filename = "TC_1_Arah-A_@HK_x_NAMA YANG HITUNG.xlsx"
+        
+    safe_name = os.path.basename(target_filename)
+    
+    # 3. Cari di direktori user aktif
+    user_file = os.path.join(user_dir, safe_name)
+    if os.path.exists(user_file):
+        return user_file
+        
+    # 4. Cari di direktori "FILE RECAP"
+    recap_path = os.path.join(BASE_DIR, "FILE RECAP", safe_name)
+    if os.path.exists(recap_path):
+        dest_path = os.path.join(user_dir, safe_name)
+        try:
+            shutil.copy2(recap_path, dest_path)
+            return dest_path
+        except Exception:
+            return recap_path
+
+    # 5. Cari di seluruh subdirektori UPLOAD_DIR
+    matched_uploads = glob.glob(os.path.join(UPLOAD_DIR, "**", safe_name), recursive=True)
+    if matched_uploads:
+        found = matched_uploads[0]
+        dest_path = os.path.join(user_dir, safe_name)
+        try:
+            shutil.copy2(found, dest_path)
+            return dest_path
+        except Exception:
+            return found
+
+    # 6. Cari di BASE_DIR
+    base_file = os.path.join(BASE_DIR, safe_name)
+    if os.path.exists(base_file):
+        dest_path = os.path.join(user_dir, safe_name)
+        try:
+            shutil.copy2(base_file, dest_path)
+            return dest_path
+        except Exception:
+            return base_file
+
+    # 7. Fallback Cerdas: Gunakan Template Resmi Bawaan (Arah-A atau Arah-B)
+    is_arah_b = "arah-b" in safe_name.lower() or "arah_b" in safe_name.lower()
+    base_template = os.path.join(
+        BASE_DIR, 
+        "TC_1_Arah-B_@HK_x_NAMA YANG HITUNG.xlsx" if is_arah_b else "TC_1_Arah-A_@HK_x_NAMA YANG HITUNG.xlsx"
+    )
+    if not os.path.exists(base_template):
+        any_xlsx = glob.glob(os.path.join(BASE_DIR, "TC_*.xlsx"))
+        if any_xlsx:
+            base_template = any_xlsx[0]
+            
+    if os.path.exists(base_template):
+        dest_path = os.path.join(user_dir, safe_name)
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(base_template)
+            ws = wb.active
+            meta = parse_filename(safe_name)
+            if meta.get("valid"):
+                if meta.get("titik") and meta["titik"] != "X":
+                    ws["C2"].value = meta["titik"]
+                if meta.get("hari"):
+                    ws["G2"].value = meta["hari"]
+                if meta.get("arah"):
+                    ws["K2"].value = meta["arah"]
+                if meta.get("pencacah") and meta["pencacah"] != "NAMA YANG HITUNG":
+                    ws["Y3"].value = meta["pencacah"]
+                ws["A1"].value = safe_name.replace(".xlsx", "")
+            wb.save(dest_path)
+            wb.close()
+            return dest_path
+        except Exception:
+            try:
+                shutil.copy2(base_template, dest_path)
+                return dest_path
+            except Exception:
+                return base_template
+
+    return None
 
 @app.route("/")
 def index():
@@ -113,9 +229,13 @@ def load_file():
         cache["counts_data"] = template_data["counts_data"]
         cache["catatan"] = template_data["header_info"]["catatan"]
         
+        with open(filepath, "rb") as f:
+            b64_content = base64.b64encode(f.read()).decode("utf-8")
+        
         return jsonify({
             "success": True,
-            "data": template_data
+            "data": template_data,
+            "file_base64": b64_content
         })
     except Exception as e:
         return jsonify({"success": False, "message": f"Gagal membaca file Excel: {str(e)}"}), 500
@@ -148,10 +268,14 @@ def upload_file():
         cache["counts_data"] = template_data["counts_data"]
         cache["catatan"] = template_data["header_info"]["catatan"]
         
+        with open(dest_path, "rb") as f:
+            b64_content = base64.b64encode(f.read()).decode("utf-8")
+        
         return jsonify({
             "success": True,
             "message": f"File '{orig_name}' berhasil diunggah!",
-            "data": template_data
+            "data": template_data,
+            "file_base64": b64_content
         })
     except Exception as e:
         return jsonify({"success": False, "message": f"Berkas diunggah tapi gagal diproses: {str(e)}"}), 500
@@ -165,36 +289,52 @@ def close_file():
 
 @app.route("/api/sync-to-excel", methods=["POST"])
 def sync_to_excel():
-    """Menulis hasil counting terverifikasi ke sel biru & kuning file Excel user"""
+    """
+    Menulis hasil counting terverifikasi ke sel biru & kuning file Excel user.
+    Dilengkapi Multi-Layer File Resolver & Fallback sehingga kebal restart cloud / serverless.
+    """
     payload = request.json or {}
     cache = get_user_cache()
+    
     filepath = payload.get("filepath") or cache.get("current_filepath")
+    filename = payload.get("filename") or (os.path.basename(filepath) if filepath else None)
+    file_base64 = payload.get("file_base64")
     counts_data = payload.get("counts_data") or cache.get("counts_data")
     note = payload.get("catatan")
     
-    if not filepath or not os.path.exists(filepath):
-        return jsonify({"success": False, "message": "Berkas Excel target tidak ditemukan."}), 400
+    # Selesaikan lokasi file dengan resolver otomatis
+    resolved_path = resolve_target_excel_file(filepath=filepath, filename=filename, file_base64=file_base64)
+    if not resolved_path or not os.path.exists(resolved_path):
+        return jsonify({"success": False, "message": "Berkas Excel target tidak ditemukan di server."}), 400
         
     if not counts_data:
         return jsonify({"success": False, "message": "Data hitungan kosong."}), 400
         
     try:
         res = write_verified_data_to_excel(
-            template_filepath=filepath,
+            template_filepath=resolved_path,
             session_data_dict=counts_data,
             note=note,
-            output_filepath=filepath
+            output_filepath=resolved_path
         )
+        cache["current_filepath"] = resolved_path
         cache["counts_data"] = counts_data
         if note is not None:
             cache["catatan"] = note
             
-        fresh_data = inspect_template(filepath)
+        fresh_data = inspect_template(resolved_path)
+        
+        # Konversi file yang telah diupdate ke Base64 agar frontend dapat menyimpannya secara offline/lokal
+        with open(resolved_path, "rb") as f:
+            updated_b64 = base64.b64encode(f.read()).decode("utf-8")
             
         return jsonify({
             "success": True,
-            "message": f"Berhasil memperbarui {res['cells_updated_count']} sel di file Excel!",
+            "message": f"Berhasil menyimpan ke Excel! ({res['cells_updated_count']} sel terisi)",
             "details": res,
+            "filepath": resolved_path,
+            "filename": os.path.basename(resolved_path),
+            "file_base64": updated_b64,
             "excel_view_rows": fresh_data["excel_view_rows"],
             "existing_stats": fresh_data["existing_stats"]
         })
@@ -206,13 +346,16 @@ def download_excel():
     """Mengunduh file Excel hasil counting user aktif"""
     cache = get_user_cache()
     filepath = request.args.get("filepath") or cache.get("current_filepath")
-    if not filepath or not os.path.exists(filepath):
+    filename = request.args.get("filename")
+    
+    resolved_path = resolve_target_excel_file(filepath=filepath, filename=filename)
+    if not resolved_path or not os.path.exists(resolved_path):
         return jsonify({"success": False, "message": "File tidak ditemukan."}), 404
         
     return send_file(
-        filepath,
+        resolved_path,
         as_attachment=True,
-        download_name=os.path.basename(filepath)
+        download_name=os.path.basename(resolved_path)
     )
 
 @app.route("/api/qc-check", methods=["POST"])
